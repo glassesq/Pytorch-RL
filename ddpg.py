@@ -15,6 +15,7 @@ MEMORY_CAPACITY = 1000
 EPISODE_NUM = 40000
 TAU = 0.02
 
+
 class ActorNet(nn.Module):
     def __init__(self, input_size, output_size):
         super(ActorNet, self).__init__()  # 使用了nn.Modules需要调用super以进行初始化
@@ -25,7 +26,7 @@ class ActorNet(nn.Module):
         x = self.fc1(x)
         x = F.relu(x)
         x = self.fc2(x)
-        x = torch.sigmoid(x)
+        x = torch.sigmoid(x)  # 限定范围
         return x
 
 
@@ -66,16 +67,16 @@ class DDPG(object):
 
         self.loss_func = nn.MSELoss()
 
-        self.memory = np.zeros((MEMORY_CAPACITY, self.STATE_NUM * 2 + 3))
+        self.memory = np.zeros((MEMORY_CAPACITY, self.STATE_NUM * 2 + 2))
 
-    def choose_action(self, x):  # epsilon-greedy策略：避免收敛在局部最优
+    def choose_action(self, x):  # 使用actor来选择动作
         x = torch.FloatTensor(x)
         action = self.actor_net.forward(x)
         return action
 
-    def save_transition(self, state, action, next_state, reward, is_done):  # 将转移存储在记忆池中
+    def save_transition(self, state, action, next_state, reward):  # 将转移存储在记忆池中
         transition = np.hstack(
-            (state, [action, reward, is_done], next_state))  # 将参数平铺在数组之中
+            (state, [action, reward], next_state))  # 将参数平铺在数组之中
         self.memory[self.position % MEMORY_CAPACITY, :] = transition
         self.position += 1
 
@@ -83,18 +84,16 @@ class DDPG(object):
     def learn(self):
         self.learn_step_counter += 1
 
+        # 经验回放机制
         sample_index = np.random.choice(
             MEMORY_CAPACITY, BATCH_SIZE)  # 在memory中抽样: memory 必然是满的，才会进入到learn
         batch_memory = self.memory[sample_index, :]
 
         batch_state = torch.FloatTensor(batch_memory[:, :self.STATE_NUM])
         batch_action = torch.Tensor(
-            #            batch_memory[:, self.STATE_NUM:self.STATE_NUM+1]).unsqueeze(0).view(-1, 1)  # 对应的transition中的action
             batch_memory[:, self.STATE_NUM:self.STATE_NUM+1])  # 对应的transition中的action
         batch_reward = torch.FloatTensor(
             batch_memory[:, self.STATE_NUM+1:self.STATE_NUM+2]).view(BATCH_SIZE, -1)  # 对应的transition中的reward
-        batch_done = torch.FloatTensor(
-            batch_memory[:, self.STATE_NUM+2:self.STATE_NUM+3])  # 对应的transition中的reward
         batch_next_state = torch.FloatTensor(
             batch_memory[:, -self.STATE_NUM:])  # 对应的是最后的next_state的部分
 
@@ -135,7 +134,6 @@ class DDPG(object):
 env = gym.make('CartPole-v0').unwrapped
 ddpg = DDPG(env)
 
-
 for episode in range(EPISODE_NUM):
     state = env.reset()
     total_reward = 0
@@ -153,7 +151,7 @@ for episode in range(EPISODE_NUM):
         reward = reward1 + reward2  # 计算reward
 
         ddpg.save_transition(state, action.detach().numpy()[
-                             0], next_state, reward, 1 - is_done)  # 存储转移
+                             0], next_state, reward)  # 存储转移
 
         total_reward += reward
         if ddpg.position > MEMORY_CAPACITY:  # 仅有memory满载时才学习
