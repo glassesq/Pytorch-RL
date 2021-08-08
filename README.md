@@ -1,1 +1,3 @@
-# 基于pytorch的强化学习调研报告
+# 基于pytorch的强化学习实践的练习
+
+DQN, DDQN, Dueling DQN, Monte-Carlo Policy Gradient, DDPG
